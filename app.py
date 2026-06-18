@@ -18,32 +18,14 @@ def resource_path(filename):
         return os.path.join(sys._MEIPASS, filename)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
 
-# ── PALETTE ──────────────────────────────────────
-BG      = "#141414"
-PANEL   = "#1E1E1E"
-SURFACE = "#252525"
-BORDER  = "#2A2A2A"
-
-YEL  = "#F5C518"  # kuning bold
-TEAL = "#00BFA5"
-PINK = "#E91E63"
-ORG  = "#FF6D00"
-GRN  = "#00C853"
-RED  = "#D32F2F"
-PRP  = "#7C4DFF"
-
-TXT    = "#F0F0F0"
-TXT_DIM= "#6B6B6B"
-TXT_YEL= "#F5C518"
-TXT_GRN= "#00C853"
-TXT_RED= "#E91E63"
-TXT_ORG= "#FF6D00"
-
-FT = ("Consolas", 9)
-FT_B = ("Consolas", 9, "bold")
-FT_H = ("Consolas", 11, "bold")
-FT_XL= ("Consolas", 16, "bold")
-FT_LG= ("Consolas", 13, "bold")
+# ── PALETTE & HELPERS (dari theme.py) ────────────
+from theme import (
+    BG, PANEL, SURFACE, BORDER,
+    YEL, TEAL, PINK, ORG, GRN, RED, PRP,
+    TXT, TXT_DIM, TXT_YEL, TXT_GRN, TXT_RED, TXT_ORG,
+    FT, FT_B, FT_H, FT_XL, FT_LG,
+    neo_btn, shadow_frame, _darken,
+)
 
 # ── KOLOM BAKU SAP ───────────────────────────────
 SAP_COLS = [
@@ -80,45 +62,6 @@ COL_W = {
 }
 
 
-def shadow_frame(parent, bg=SURFACE, border=BORDER, bw=2, **kw):
-    """Frame dengan border tebal ala neo-brutal."""
-    wrap = tk.Frame(parent, bg=border, padx=bw, pady=bw)
-    inner = tk.Frame(wrap, bg=bg, **kw)
-    inner.pack(fill="both", expand=True)
-    return wrap, inner
-
-
-def neo_btn(parent, text, bg, fg="white", cmd=None, font=FT_H,
-            px=18, py=9, border="#000000"):
-    """Tombol neo-brutal: flat + thick border bawah/kanan (shadow efek)."""
-    outer = tk.Frame(parent, bg=border, padx=0, pady=0)
-
-    def on_enter(_):
-        inner.config(bg=_darken(bg))
-        outer.config(padx=2, pady=2)
-    def on_leave(_):
-        inner.config(bg=bg)
-        outer.config(padx=0, pady=0)
-
-    inner = tk.Button(outer, text=text, font=font, bg=bg, fg=fg,
-                      activebackground=_darken(bg), activeforeground=fg,
-                      relief="flat", cursor="hand2", bd=0,
-                      command=cmd, padx=px, pady=py)
-    inner.pack()
-    outer.bind("<Enter>", on_enter)
-    inner.bind("<Enter>", on_enter)
-    outer.bind("<Leave>", on_leave)
-    inner.bind("<Leave>", on_leave)
-    return outer
-
-
-def _darken(hex_color, amt=20):
-    hex_color = hex_color.lstrip("#")
-    r, g, b = int(hex_color[0:2],16), int(hex_color[2:4],16), int(hex_color[4:6],16)
-    r, g, b = max(0,r-amt), max(0,g-amt), max(0,b-amt)
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -132,7 +75,7 @@ class App(tk.Tk):
             self.config_file = os.path.join(os.path.dirname(sys.executable), "config.json")
         else:
             self.config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-        self.db_host = self._load_ip()
+        self.db_config = self._load_db_config()
 
         # Set icon aplikasi (title bar + taskbar)
         icon_path = resource_path("app.ico")
@@ -225,19 +168,22 @@ class App(tk.Tk):
         right.pack(side="right", pady=10)
 
         # Baris atas: tombol IP
-        self.btn_ip = tk.Button(right, text=f"🌐 IP: {self.db_host}",
+        host_display = self.db_config.get("host", "127.0.0.1")
+        self.btn_db = tk.Button(right, text=f"🌐 DB: {host_display}",
                                 font=FT_B, bg=SURFACE, fg=TXT_YEL,
                                 activebackground=_darken(SURFACE),
                                 activeforeground=TXT_YEL,
                                 relief="flat", cursor="hand2", bd=0,
-                                command=self._show_ip_settings,
+                                command=self._show_db_settings,
                                 padx=10, pady=4)
-        self.btn_ip.pack(side="top", pady=(0, 4))
+        self.btn_db.pack(side="top", pady=(0, 4))
 
         # Baris bawah: MONITOR DB + OPTIONS + CLEAR
         bot_btn = tk.Frame(right, bg=BG)
         bot_btn.pack(side="top")
         neo_btn(bot_btn, "📊 MONITOR DB", TEAL, "white", self._show_db_monitor,
+                font=FT_B, px=12, py=6, border="#000").pack(side="left", padx=4)
+        neo_btn(bot_btn, "🧪 MOL & GULA", ORG, "white", self._open_mol_gula,
                 font=FT_B, px=12, py=6, border="#000").pack(side="left", padx=4)
         neo_btn(bot_btn, "⚙ OPTIONS",   SURFACE, TXT_DIM, self._show_options,
                 font=FT_B, px=12, py=6, border=BORDER).pack(side="left", padx=4)
@@ -387,63 +333,88 @@ class App(tk.Tk):
         self.lbl_ts.pack(side="right", padx=20)
 
     # ── CONFIG IP ────────────────────────────────
-    def _load_ip(self):
-        """Baca db_host dari config.json. Default 127.0.0.1 jika file belum ada."""
+    def _load_db_config(self):
+        """Baca db_config dari config.json."""
+        default_config = {
+            "host": "127.0.0.1",
+            "port": 3306,
+            "user": "",
+            "password": "",
+            "database": "timbangan"
+        }
         try:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("db_host", "127.0.0.1")
+                if "db_host" in data and "host" not in data:
+                    data["host"] = data["db_host"]
+                # merge default with loaded
+                for k, v in default_config.items():
+                    data.setdefault(k, v)
+                return data
         except (FileNotFoundError, json.JSONDecodeError, Exception):
-            return "127.0.0.1"
+            return default_config
 
-    def _save_ip(self, new_ip):
-        """Simpan db_host baru ke config.json dan update attribute."""
-        self.db_host = new_ip
+    def _save_db_config(self, new_config):
+        """Simpan db_config baru ke config.json dan update attribute."""
+        self.db_config = new_config
         try:
             with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump({"db_host": new_ip}, f, indent=2)
+                json.dump(self.db_config, f, indent=2)
         except Exception as e:
             self._log("ERROR", f"Gagal menyimpan config: {e}")
 
-    def _show_ip_settings(self):
-        """Pop-up untuk mengubah IP server database."""
-        ip_win = tk.Toplevel(self)
-        ip_win.title("Setting IP Database")
-        ip_win.geometry("380x200")
-        ip_win.configure(bg=BG)
-        ip_win.transient(self)
-        ip_win.grab_set()
+    def _show_db_settings(self):
+        """Pop-up untuk mengubah setting server database."""
+        db_win = tk.Toplevel(self)
+        db_win.title("Setting Koneksi Database")
+        db_win.geometry("400x500")
+        db_win.configure(bg=BG)
+        db_win.transient(self)
+        db_win.grab_set()
 
-        wrap, inner = shadow_frame(ip_win, bg=SURFACE, border=BORDER, bw=2)
+        wrap, inner = shadow_frame(db_win, bg=SURFACE, border=BORDER, bw=2)
         wrap.pack(fill="both", expand=True, padx=10, pady=10)
 
-        tk.Label(inner, text="IP Server Database", bg=SURFACE, fg=TXT_YEL,
-                 font=FT_H).pack(pady=(18, 4))
-        tk.Label(inner, text="Masukkan alamat IP tujuan MySQL:",
-                 bg=SURFACE, fg=TXT_DIM, font=FT).pack(pady=(0, 8))
+        tk.Label(inner, text="Konfigurasi Database", bg=SURFACE, fg=TXT_YEL, font=FT_H).pack(pady=(10, 4))
+        
+        entries = {}
+        fields = [("Host", "host"), ("Port", "port"), ("User", "user"), ("Password", "password"), ("Database", "database")]
+        
+        for label_text, key in fields:
+            f_frame = tk.Frame(inner, bg=SURFACE)
+            f_frame.pack(fill="x", padx=20, pady=4)
+            tk.Label(f_frame, text=label_text, bg=SURFACE, fg=TXT_DIM, font=FT, width=10, anchor="w").pack(side="left")
+            ent = tk.Entry(f_frame, font=FT, bg="#1A1A1A", fg=TXT, insertbackground=TXT, relief="flat")
+            if key == "password":
+                ent.config(show="*")
+            ent.pack(side="left", fill="x", expand=True, ipady=4, padx=5)
+            val = self.db_config.get(key, "")
+            ent.insert(0, str(val))
+            entries[key] = ent
 
-        entry_ip = tk.Entry(inner, font=FT_H, bg="#1A1A1A", fg=TXT,
-                            insertbackground=TXT, relief="flat", justify="center")
-        entry_ip.pack(pady=4, padx=30, fill="x", ipady=6)
-        entry_ip.insert(0, self.db_host)
-        entry_ip.select_range(0, tk.END)
-        entry_ip.focus_set()
+        entries["host"].focus_set()
 
         def simpan(event=None):
-            new_ip = entry_ip.get().strip()
-            if not new_ip:
+            new_conf = {
+                "host": entries["host"].get().strip(),
+                "port": int(entries["port"].get().strip() or 3306),
+                "user": entries["user"].get().strip(),
+                "password": entries["password"].get().strip(),
+                "database": entries["database"].get().strip()
+            }
+            if not new_conf["host"]:
                 return
-            self._save_ip(new_ip)
-            self.btn_ip.config(text=f"🌐 IP: {self.db_host}")
-            self._log("SUCCESS", f"IP Database diperbarui → {self.db_host}")
-            ip_win.destroy()
+            self._save_db_config(new_conf)
+            self.btn_db.config(text=f"🌐 DB: {new_conf['host']}")
+            self._log("SUCCESS", f"DB Config diperbarui → {new_conf['host']}")
+            db_win.destroy()
 
-        entry_ip.bind("<Return>", simpan)
+        for ent in entries.values():
+            ent.bind("<Return>", simpan)
 
         btn_wrap = tk.Frame(inner, bg=SURFACE)
-        btn_wrap.pack(pady=10)
-        neo_btn(btn_wrap, "💾 SIMPAN", GRN, "white", simpan,
-                font=FT_B, px=15, py=6, border="#000").pack()
+        btn_wrap.pack(pady=15)
+        neo_btn(btn_wrap, "💾 SIMPAN", GRN, "white", simpan, font=FT_B, px=15, py=6, border="#000").pack()
 
     # ── LIVE DB MONITOR ─────────────────────────
     def _show_db_monitor(self):
@@ -472,6 +443,10 @@ class App(tk.Tk):
                 lambda: self._edit_db_data(mon_tree),
                 font=FT_B, px=14, py=6, border="#000").pack(side="right", padx=6, pady=8)
 
+        neo_btn(mhdr, "🗑 DELETE DATA SELECTED", RED, "white",
+                lambda: self._delete_db_data(mon_tree),
+                font=FT_B, px=14, py=6, border="#000").pack(side="right", padx=6, pady=8)
+
         # ── Aksen garis bawah header
         tk.Frame(mon, bg=TEAL, height=3).pack(fill="x")
 
@@ -479,7 +454,7 @@ class App(tk.Tk):
         info_bar = tk.Frame(mon, bg="#0A0A0A", height=28)
         info_bar.pack(fill="x")
         info_bar.pack_propagate(False)
-        tk.Label(info_bar, text=f"  🌐 Host: {self.db_host}   │   📦 Tabel: data_timbang",
+        tk.Label(info_bar, text=f"  🌐 Host: {self.db_config.get('host', '127.0.0.1')}   │   📦 Tabel: data_timbang",
                  font=FT, bg="#0A0A0A", fg=TXT_DIM).pack(side="left", padx=8, pady=4)
         self._mon_info_lbl = tk.Label(info_bar, text="", font=FT, bg="#0A0A0A", fg=TXT_GRN)
         self._mon_info_lbl.pack(side="right", padx=12, pady=4)
@@ -492,8 +467,13 @@ class App(tk.Tk):
         # Mengambil kolom secara dinamis dari DB
         db_cols = []
         try:
-            conn = pymysql.connect(host=self.db_host, user="wb_rmi",
-                                   password="12345678", database="timbangan")
+            conn = pymysql.connect(
+                host=self.db_config.get("host", "127.0.0.1"),
+                port=int(self.db_config.get("port", 3306)),
+                user=self.db_config.get("user", "wb_rmi"),
+                password=self.db_config.get("password", "12345678"),
+                database=self.db_config.get("database", "timbangan")
+            )
             with conn.cursor() as cursor:
                 cursor.execute("SHOW COLUMNS FROM data_timbang")
                 db_cols = [x[0] for x in cursor.fetchall()]
@@ -568,9 +548,14 @@ class App(tk.Tk):
         conn = None
         cursor = None
         try:
-            conn = pymysql.connect(host=self.db_host, user="wb_rmi",
-                                   password="12345678", database="timbangan",
-                                   autocommit=False)
+            conn = pymysql.connect(
+                host=self.db_config.get("host", "127.0.0.1"),
+                port=int(self.db_config.get("port", 3306)),
+                user=self.db_config.get("user", "wb_rmi"),
+                password=self.db_config.get("password", "12345678"),
+                database=self.db_config.get("database", "timbangan"),
+                autocommit=False
+            )
             cursor = conn.cursor()
 
             # Ambil nama kolom dari tabel
@@ -588,7 +573,7 @@ class App(tk.Tk):
             # Query dengan default sorting menggunakan STR_TO_DATE untuk keakuratan tanggal string
             if search_col and search_query:
                 # Cari berbasis LIKE (parameterized untuk keamanan)
-                query = f"SELECT * FROM data_timbang WHERE `{search_col}` LIKE %s ORDER BY STR_TO_DATE(Tanggal_Keluar, '%d/%m/%Y %H:%i') DESC LIMIT 100"
+                query = f"SELECT * FROM data_timbang WHERE `{search_col}` LIKE %s ORDER BY STR_TO_DATE(Tanggal_Keluar, '%%d/%%m/%%Y %%H:%%i') DESC LIMIT 100"
                 cursor.execute(query, (f"%{search_query}%",))
             else:
                 query = "SELECT * FROM data_timbang ORDER BY STR_TO_DATE(Tanggal_Keluar, '%d/%m/%Y %H:%i') DESC LIMIT 100"
@@ -650,12 +635,12 @@ class App(tk.Tk):
             if search_col and search_query:
                 self._log("SUCCESS", f"Monitor DB: Ditemukan {len(rows)} data untuk `{search_col}` = '{search_query}'.")
             else:
-                self._log("SUCCESS", f"Monitor DB: {len(rows)} baris berhasil ditarik dari {self.db_host}.")
+                self._log("SUCCESS", f"Monitor DB: {len(rows)} baris berhasil ditarik dari {self.db_config.get('host', '127.0.0.1')}.")
 
         except Exception as e:
             messagebox.showerror("Error Koneksi DB",
                                  f"Gagal menarik data dari database.\n\n"
-                                 f"Host: {self.db_host}\n"
+                                 f"Host: {self.db_config.get('host', '127.0.0.1')}\n"
                                  f"Error: {e}")
             self._log("ERROR", f"Monitor DB gagal: {e}")
         finally:
@@ -722,8 +707,8 @@ class App(tk.Tk):
 
             val_str = str(data_dict.get(col, ""))
 
-            # Khusus No_Urut jadikan readonly/disabled karena PK
-            if col == "No_Urut":
+            # Khusus id jadikan readonly/disabled karena PK
+            if col == "id":
                 ent = tk.Entry(row_f, font=FT, bg="#1A1A1A", fg=TXT_DIM, relief="flat", state="readonly")
                 ent.pack(side="left", fill="x", expand=True, ipady=3)
                 ent.config(state="normal")
@@ -751,16 +736,16 @@ class App(tk.Tk):
         for col, ent in entry_map.items():
             updated_data[col] = ent.get().strip()
 
-        no_urut = updated_data.get("No_Urut")
-        if not no_urut:
-            messagebox.showerror("Error", "No_Urut tidak ditemukan!")
+        row_id = updated_data.get("id")
+        if not row_id:
+            messagebox.showerror("Error", "ID tidak ditemukan!")
             return
 
-        # Ambil daftar kolom yang akan di-update (selain No_Urut)
-        update_cols = [c for c in updated_data.keys() if c != "No_Urut"]
+        # Ambil daftar kolom yang akan di-update (selain id)
+        update_cols = [c for c in updated_data.keys() if c != "id"]
 
         set_clause = ", ".join([f"`{c}`=%s" for c in update_cols])
-        sql = f"UPDATE data_timbang SET {set_clause} WHERE No_Urut=%s"
+        sql = f"UPDATE data_timbang SET {set_clause} WHERE id=%s"
 
         vals = []
         for c in update_cols:
@@ -769,14 +754,19 @@ class App(tk.Tk):
                 vals.append(None)
             else:
                 vals.append(val)
-        vals.append(no_urut)
+        vals.append(row_id)
 
         conn = None
         cursor = None
         try:
-            conn = pymysql.connect(host=self.db_host, user="wb_rmi",
-                                   password="12345678", database="timbangan",
-                                   autocommit=False)
+            conn = pymysql.connect(
+                host=self.db_config.get("host", "127.0.0.1"),
+                port=int(self.db_config.get("port", 3306)),
+                user=self.db_config.get("user", "wb_rmi"),
+                password=self.db_config.get("password", "12345678"),
+                database=self.db_config.get("database", "timbangan"),
+                autocommit=False
+            )
             cursor = conn.cursor()
 
             cursor.execute(sql, tuple(vals))
@@ -787,13 +777,80 @@ class App(tk.Tk):
 
             # Refresh data di Treeview monitor
             self._fetch_db_data(tree_widget)
-            self._log("SUCCESS", f"Monitor DB: Berhasil memperbarui data No_Urut {no_urut}.")
+            self._log("SUCCESS", f"Monitor DB: Berhasil memperbarui data ID {row_id}.")
 
         except Exception as e:
             if conn:
                 conn.rollback()
             messagebox.showerror("Error Update DB", f"Gagal menyimpan data ke database:\n\n{e}", parent=edit_win)
             self._log("ERROR", f"Monitor DB Update gagal: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    def _delete_db_data(self, tree_widget):
+        """Hapus data yang dipilih di Treeview monitor dari database MySQL."""
+        selected_item = tree_widget.focus()
+        if not selected_item:
+            messagebox.showwarning("Peringatan", "Silakan pilih data yang ingin dihapus terlebih dahulu!")
+            return
+
+        values = tree_widget.item(selected_item, "values")
+        cols = tree_widget["columns"]
+        data_dict = dict(zip(cols, values))
+
+        row_id = data_dict.get("id", "")
+        if not row_id:
+            messagebox.showerror("Error", "ID tidak ditemukan pada data yang dipilih!")
+            return
+
+        # Tampilkan info ringkas untuk konfirmasi
+        info_lines = []
+        for key in ["id", "No", "Nopol", "Supir", "Type", "Nomor_SPMSPB"]:
+            val = data_dict.get(key, "")
+            if val:
+                info_lines.append(f"  {key}: {val}")
+        info_text = "\n".join(info_lines)
+
+        confirm = messagebox.askyesno(
+            "Konfirmasi Hapus",
+            f"Apakah Anda yakin ingin MENGHAPUS data berikut dari database?\n\n"
+            f"{info_text}\n\n"
+            f"⚠ Data yang dihapus TIDAK BISA dikembalikan!"
+        )
+        if not confirm:
+            return
+
+        conn = None
+        cursor = None
+        try:
+            conn = pymysql.connect(
+                host=self.db_config.get("host", "127.0.0.1"),
+                port=int(self.db_config.get("port", 3306)),
+                user=self.db_config.get("user", "wb_rmi"),
+                password=self.db_config.get("password", "12345678"),
+                database=self.db_config.get("database", "timbangan"),
+                autocommit=False
+            )
+            cursor = conn.cursor()
+
+            sql = "DELETE FROM data_timbang WHERE id = %s"
+            cursor.execute(sql, (row_id,))
+            conn.commit()
+
+            messagebox.showinfo("Sukses", f"Data ID {row_id} berhasil dihapus!")
+            self._log("SUCCESS", f"Monitor DB: Data ID {row_id} berhasil dihapus dari database.")
+
+            # Refresh data di Treeview monitor
+            self._fetch_db_data(tree_widget)
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            messagebox.showerror("Error Hapus DB", f"Gagal menghapus data dari database:\n\n{e}")
+            self._log("ERROR", f"Monitor DB Delete gagal: {e}")
         finally:
             if cursor:
                 cursor.close()
@@ -1138,13 +1195,31 @@ class App(tk.Tk):
             ]
             
             for col in kolom_angka:
+                kolom_angka = [
+                'Kode_Pos_Insentif_Jarak', 'Jumlah_Karung', 'NoSystem', 
+                'Shift', 'YEARSJ', 'MONTHSJ', 'Nomor_SPTA', 'Nomor_GRPO',
+                'Qty_SJ', 'Qty_SPMSPB', 'Berat_Masuk', 'Berat_Keluar', 'Berat_rata2_Karung'
+            ]
+            
+            for col in kolom_angka:
                 if col in df.columns:
-                    # Bersihkan koma ribuan (kalau ada), ubah ke numeric, yang kosong/error jadi 0
-                    df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    # 1. Ambil string asli dan bersihkan spasi
+                    s_clean = df[col].astype(str).str.strip()
+                    
+                    # 2. JURUS UNIVERSAL: Buang buntut desimal .00 atau ,00 di paling belakang (jika ada)
+                    s_clean = s_clean.str.replace(r'[\.,]00$', '', regex=True)
+                    
+                    # 3. Hapus semua tanda titik dan koma ribuan yang tersisa
+                    s_clean = s_clean.str.replace('.', '', regex=False)
+                    s_clean = s_clean.str.replace(',', '', regex=False)
+                    
+                    # 4. Ubah ke numeric, yang kosong/error otomatis jadi 0
+                    df[col] = pd.to_numeric(s_clean, errors='coerce').fillna(0)
                     
                     # Konversi khusus untuk kolom yang murni INT (Tanpa desimal)
                     if col in ['Kode_Pos_Insentif_Jarak', 'Jumlah_Karung', 'NoSystem', 'Shift', 'YEARSJ', 'MONTHSJ']:
                         df[col] = df[col].astype(int)
+            # ====================================================
             # ====================================================
 
             # ====================================================
@@ -1181,12 +1256,24 @@ class App(tk.Tk):
                     return # 🛑 STOP UPLOAD! BIAR USER YANG MENGHAKIMI DATANYA!
             # ====================================================
 
-            # --- MESIN ABS: JADIKAN POSITIF MUTLAK (pakai abs() bukan hapus karakter '-') ---
+            # ====================================================
+            # --- MESIN ABS: JADIKAN POSITIF MUTLAK ---
+            # ====================================================
             for col in [c for c in df.columns if any(x in c for x in ["Qty","Berat","Jumlah","Persentase"])]:
-                s = df[col].astype(str)
-                s = s.str.replace(',', '', regex=False)  # Buang koma ribuan
-                s = s.str.replace('(', '-', regex=False).str.replace(')', '', regex=False)  # Kurung akuntansi → minus
-                df[col] = pd.to_numeric(s.str.strip(), errors="coerce").abs()  # Konversi + ABS
+                s = df[col].astype(str).str.strip()
+                
+                # 1. Bersihkan kurung akuntansi untuk tanda minus
+                s = s.str.replace('(', '-', regex=False).str.replace(')', '', regex=False)
+                
+                # 2. JURUS UNIVERSAL: Buang buntut desimal .00 atau ,00 di paling belakang (jika ada)
+                s = s.str.replace(r'[\.,]00$', '', regex=True)
+                
+                # 3. Hapus semua tanda titik dan koma ribuan yang tersisa
+                s = s.str.replace('.', '', regex=False)
+                s = s.str.replace(',', '', regex=False)
+                
+                # 4. Konversi ke Float/Numeric + ABS
+                df[col] = pd.to_numeric(s, errors="coerce").abs().fillna(0)
             
             df = df.replace({np.nan: None, pd.NaT: None})
 
@@ -1209,9 +1296,15 @@ class App(tk.Tk):
                 return # HENTIKAN UPLOAD, biar lu bisa ngecek dulu!
             # ====================================================
 
-            self._log("INFO", f"Mencoba koneksi ke database di {self.db_host}...")
-            conn = pymysql.connect(host=self.db_host, user="wb_rmi",
-                                   password="12345678", database="timbangan", autocommit=False)
+            self._log("INFO", f"Mencoba koneksi ke database di {self.db_config.get('host', '127.0.0.1')}...")
+            conn = pymysql.connect(
+                host=self.db_config.get("host", "127.0.0.1"),
+                port=int(self.db_config.get("port", 3306)),
+                user=self.db_config.get("user", "wb_rmi"),
+                password=self.db_config.get("password", "12345678"),
+                database=self.db_config.get("database", "timbangan"),
+                autocommit=False
+            )
             cursor = conn.cursor()
 
             cursor.execute("SHOW COLUMNS FROM data_timbang")
@@ -1335,6 +1428,11 @@ class App(tk.Tk):
         btn_wrap = tk.Frame(inner, bg=SURFACE)
         btn_wrap.pack(pady=15)
         neo_btn(btn_wrap, "🔍 CARI", PRP, "white", do_search, font=FT_B, px=15, py=6).pack()
+
+    def _open_mol_gula(self):
+        """Buka modul input Molasses & Gula."""
+        from mol_gula_module import ModuleMolGula
+        ModuleMolGula(self, self.db_config)
 
 if __name__ == "__main__":
     app = App()

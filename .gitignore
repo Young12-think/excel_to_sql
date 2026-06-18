@@ -4,3 +4,4 @@ dist/
 *.spec
 exceltosql.py
 icon_source.png
+config.json
