@@ -12,6 +12,8 @@ from datetime import datetime
 
 warnings.filterwarnings("ignore")
 
+APP_VERSION = "4.1.4"
+
 def resource_path(filename):
     """Ambil path file baik dari folder script maupun dari dalam EXE (PyInstaller)."""
     if getattr(sys, '_MEIPASS', None):
@@ -65,7 +67,7 @@ COL_W = {
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("REKAP DSAJA — Data Input")
+        self.title(f"REKAP DSAJA - Data Input V{APP_VERSION}")
         self.geometry("1340x800")
         self.minsize(1100, 650)
         self.configure(bg=BG)
@@ -470,8 +472,8 @@ class App(tk.Tk):
             conn = pymysql.connect(
                 host=self.db_config.get("host", "127.0.0.1"),
                 port=int(self.db_config.get("port", 3306)),
-                user=self.db_config.get("user", "wb_rmi"),
-                password=self.db_config.get("password", "12345678"),
+                user=self.db_config.get("user", ""),
+                password=self.db_config.get("password", ""),
                 database=self.db_config.get("database", "timbangan")
             )
             with conn.cursor() as cursor:
@@ -551,8 +553,8 @@ class App(tk.Tk):
             conn = pymysql.connect(
                 host=self.db_config.get("host", "127.0.0.1"),
                 port=int(self.db_config.get("port", 3306)),
-                user=self.db_config.get("user", "wb_rmi"),
-                password=self.db_config.get("password", "12345678"),
+                user=self.db_config.get("user", ""),
+                password=self.db_config.get("password", ""),
                 database=self.db_config.get("database", "timbangan"),
                 autocommit=False
             )
@@ -741,8 +743,8 @@ class App(tk.Tk):
             messagebox.showerror("Error", "ID tidak ditemukan!")
             return
 
-        # Ambil daftar kolom yang akan di-update (selain id)
-        update_cols = [c for c in updated_data.keys() if c != "id"]
+        # Ambil daftar kolom yang akan di-update (selain id dan kolom generated)
+        update_cols = [c for c in updated_data.keys() if c not in ("id", "Tanggal_Keluar_Clean")]
 
         set_clause = ", ".join([f"`{c}`=%s" for c in update_cols])
         sql = f"UPDATE data_timbang SET {set_clause} WHERE id=%s"
@@ -762,8 +764,8 @@ class App(tk.Tk):
             conn = pymysql.connect(
                 host=self.db_config.get("host", "127.0.0.1"),
                 port=int(self.db_config.get("port", 3306)),
-                user=self.db_config.get("user", "wb_rmi"),
-                password=self.db_config.get("password", "12345678"),
+                user=self.db_config.get("user", ""),
+                password=self.db_config.get("password", ""),
                 database=self.db_config.get("database", "timbangan"),
                 autocommit=False
             )
@@ -829,8 +831,8 @@ class App(tk.Tk):
             conn = pymysql.connect(
                 host=self.db_config.get("host", "127.0.0.1"),
                 port=int(self.db_config.get("port", 3306)),
-                user=self.db_config.get("user", "wb_rmi"),
-                password=self.db_config.get("password", "12345678"),
+                user=self.db_config.get("user", ""),
+                password=self.db_config.get("password", ""),
                 database=self.db_config.get("database", "timbangan"),
                 autocommit=False
             )
@@ -1300,8 +1302,8 @@ class App(tk.Tk):
             conn = pymysql.connect(
                 host=self.db_config.get("host", "127.0.0.1"),
                 port=int(self.db_config.get("port", 3306)),
-                user=self.db_config.get("user", "wb_rmi"),
-                password=self.db_config.get("password", "12345678"),
+                user=self.db_config.get("user", ""),
+                password=self.db_config.get("password", ""),
                 database=self.db_config.get("database", "timbangan"),
                 autocommit=False
             )
@@ -1430,7 +1432,7 @@ class App(tk.Tk):
         neo_btn(btn_wrap, "🔍 CARI", PRP, "white", do_search, font=FT_B, px=15, py=6).pack()
 
     def _open_mol_gula(self):
-        """Buka modul input Molasses & Gula."""
+        """ modul input Molasses & Gula."""
         from mol_gula_module import ModuleMolGula
         ModuleMolGula(self, self.db_config)
 
